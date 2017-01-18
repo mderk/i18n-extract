@@ -15,9 +15,10 @@ export default function extractFromFiles(filenames, options) {
   }
 
   let toScan = [];
+  const globOpts = (options && options.glob) || {};
 
   filenames.forEach((filename) => {
-    toScan = toScan.concat(glob.sync(filename, {}));
+    toScan = toScan.concat(glob.sync(filename, globOpts));
   });
 
   toScan.forEach((filename) => {
