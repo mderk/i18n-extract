@@ -1,12 +1,7 @@
 import { parse } from 'babylon';
 import traverse from 'babel-traverse';
-import { uniq } from './utils';
 
-const noInformationTypes = [
-  'CallExpression',
-  'Identifier',
-  'MemberExpression',
-];
+const noInformationTypes = ['CallExpression', 'Identifier', 'MemberExpression'];
 
 function getKey(node) {
   if (node.type === 'StringLiteral') {
@@ -14,9 +9,7 @@ function getKey(node) {
   } else if (node.type === 'BinaryExpression' && node.operator === '+') {
     return getKey(node.left) + getKey(node.right);
   } else if (node.type === 'TemplateLiteral') {
-    return node.quasis
-      .map((quasi) => quasi.value.cooked)
-      .join('*');
+    return node.quasis.map(quasi => quasi.value.cooked).join('*');
   } else if (noInformationTypes.includes(node.type)) {
     return '*'; // We can't extract anything.
   }
@@ -26,12 +19,11 @@ function getKey(node) {
   return null;
 }
 
-const commentRegExp = /i18n-extract (\S+)/;
+const commentRegExp = /i18n-extract (.+)/;
+const commentIgnoreRegExp = /i18n-extract-disable-line/;
 
 export default function extractFromCode(code, options = {}) {
-  const {
-    marker = 'i18n',
-  } = options;
+  const { marker = 'i18n', keyLoc = 0 } = options;
 
   const ast = parse(code, {
     sourceType: 'module',
@@ -52,44 +44,56 @@ export default function extractFromCode(code, options = {}) {
       'asyncGenerators',
       'functionBind',
       'functionSent',
+      'dynamicImport',
     ],
   });
 
   const keys = [];
+  const ignoredLines = [];
 
   // Look for keys in the comments.
-  ast.comments.forEach((comment) => {
-    const match = commentRegExp.exec(comment.value);
-
+  ast.comments.forEach(comment => {
+    let match = commentRegExp.exec(comment.value);
     if (match) {
-      keys.push(match[1]);
+      keys.push({
+        key: match[1].trim(),
+        loc: comment.loc,
+      });
+    }
+
+    // Check for ignored lines
+    match = commentIgnoreRegExp.exec(comment.value);
+    if (match) {
+      ignoredLines.push(comment.loc.start.line);
     }
   });
 
   // Look for keys in the source code.
   traverse(ast, {
     CallExpression(path) {
-      const {
-        node,
-      } = path;
+      const { node } = path;
 
-      const {
-        callee: {
-          name,
-          type,
-        },
-      } = node;
+      if (ignoredLines.includes(node.loc.end.line)) {
+        // Skip ignored lines
+        return;
+      }
 
-      if ((type === 'Identifier' && name === marker) ||
-        path.get('callee').matchesPattern(marker)) {
-        const key = getKey(node.arguments[0]);
+      const { callee: { name, type } } = node;
+
+      if ((type === 'Identifier' && name === marker) || path.get('callee').matchesPattern(marker)) {
+        const key = getKey(
+          keyLoc < 0 ? node.arguments[node.arguments.length + keyLoc] : node.arguments[keyLoc],
+        );
 
         if (key) {
-          keys.push(key);
+          keys.push({
+            key,
+            loc: node.loc,
+          });
         }
       }
     },
   });
 
-  return uniq(keys);
+  return keys;
 }

@@ -1,33 +1,34 @@
 import glob from 'glob';
 import fs from 'fs';
 import path from 'path'
-import { uniq } from './utils';
 import extractFromCode from './extractFromCode';
 
 export default function extractFromFiles(filenames, options) {
-  let keys = [];
+  const keys = [];
 
   // filenames should be an array
   if (typeof filenames === 'string') {
-    filenames = [
-      filenames,
-    ];
+    filenames = [filenames];
   }
 
   let toScan = [];
   const globOpts = (options && options.glob) || {};
 
-  filenames.forEach((filename) => {
+  filenames.forEach(filename => {
     toScan = toScan.concat(glob.sync(filename, globOpts));
   });
 
-  toScan.forEach((filename) => {
+  toScan.forEach(filename => {
     let code = fs.readFileSync(filename, 'utf8');
     code = compileCode(filename, code, options);
-    keys = keys.concat(extractFromCode(code, options));
+    const extractedKeys = extractFromCode(code, options);
+    extractedKeys.forEach(keyObj => {
+      keyObj.file = filename;
+      keys.push(keyObj);
+    });
   });
 
-  return uniq(keys);
+  return keys;
 }
 
 const compilersCache = {};
